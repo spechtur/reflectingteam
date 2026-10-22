@@ -25,7 +25,7 @@
     position:fixed;inset:0;display:flex;flex-direction:column;overflow-y:auto;
     padding:max(3vh,env(safe-area-inset-top)) 5vw max(3vh,env(safe-area-inset-bottom));
   }
-  .screen[hidden]{display:none}
+  .screen[hidden],[hidden]{display:none!important}
 
   /* ---------- Buttons ---------- */
   .btn{
@@ -39,6 +39,8 @@
   .btn:active{transform:translateY(1px)}
   .btn.ghost{background:transparent;color:var(--fg);opacity:.75}
   .btn.ghost:hover{opacity:1}
+  .btn.alt{background:transparent;color:var(--fg)}
+  .btn:disabled{opacity:.3;cursor:default;transform:none}
   .btn:focus-visible{outline:.2em solid var(--fg);outline-offset:.2em}
 
   /* ---------- Startseite ---------- */
@@ -69,6 +71,13 @@
   .ov .nm{flex:1;font-weight:800;text-transform:uppercase;letter-spacing:.08em;font-size:.9em}
   .ov .tm{font-variant-numeric:tabular-nums;opacity:.7;font-weight:700}
   .start-foot{display:flex}
+  .modes{display:flex;flex-wrap:wrap;gap:12px;width:100%}
+  .mode{
+    flex:1 1 17rem;max-width:26rem;display:flex;flex-direction:column;align-items:flex-start;gap:.5em;
+    text-align:left;padding:1em 1.2em;
+  }
+  .mode .mt{font-size:1em}
+  .mode .ms{font-size:.62em;font-weight:700;text-transform:none;letter-spacing:.02em;line-height:1.3;opacity:.85}
   .strip{position:fixed;left:0;right:0;bottom:0;height:max(1.4vh,8px);display:flex}
   .strip span{flex:1}
 
@@ -106,6 +115,17 @@
   .dot.cur{background:var(--fg);opacity:1;transform:scale(1.6)}
 
   .ctrl{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .ctrl.single{grid-template-columns:1fr}
+  .setup{display:flex;flex-direction:column;gap:12px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{
+    font:800 clamp(.9rem,1.5vw,1.8rem) var(--sans);letter-spacing:.06em;text-transform:uppercase;
+    padding:.55em 1em;border:.14em solid var(--fg);border-radius:99px;background:transparent;color:var(--fg);
+    cursor:pointer;opacity:.7;transition:opacity .2s ease,background .3s ease,color .3s ease;
+  }
+  .chip:hover{opacity:1}
+  .chip.on{background:var(--fg);color:var(--bg);opacity:1}
+  .setup .step{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .nav{display:flex;gap:12px}
   .nav .grow{flex:1}
 
@@ -149,7 +169,16 @@
     <ul class="ov" id="ov"></ul>
   </div>
   <div class="start-foot">
-    <button class="btn" id="btnStart" type="button">Start&nbsp;→</button>
+    <div class="modes">
+      <button class="btn mode" id="btnShort" type="button">
+        <span class="mt">Kompakt&nbsp;→</span>
+        <span class="ms">Rund 7 Min. · feste Zeiten pro Phase</span>
+      </button>
+      <button class="btn mode alt" id="btnLong" type="button">
+        <span class="mt">Lang&nbsp;→</span>
+        <span class="ms">Gleiche Phasen · Zeiten selbst wählen oder offen lassen</span>
+      </button>
+    </div>
   </div>
   <div class="strip" id="strip"></div>
 </section>
@@ -171,7 +200,15 @@
     </div>
   </div>
   <div class="dots" id="dots" aria-hidden="true"></div>
-  <div class="ctrl">
+  <div class="setup" id="setup" hidden>
+    <div class="chips" id="chips"></div>
+    <div class="step">
+      <button class="btn ghost" id="btnMinus" type="button">− 1 Min.</button>
+      <button class="btn ghost" id="btnPlusMin" type="button">+ 1 Min.</button>
+    </div>
+    <button class="btn" id="btnGo" type="button">Timer starten</button>
+  </div>
+  <div class="ctrl" id="ctrl">
     <button class="btn ghost" id="btnToggle" type="button">Pause</button>
     <button class="btn ghost" id="btnPlus" type="button">+ 30 Sek.</button>
   </div>
@@ -221,8 +258,8 @@
 
   /* ===== Startseite aufbauen ===== */
   var totalSecs = PHASES.reduce(function(a,p){ return a+p.secs; },0);
-  $('lead').textContent = 'A schildert einen Fall, B und C denken laut weiter, und A hört nur zu. In rund '
-    + Math.round(totalSecs/60) + ' Minuten entstehen neue Perspektiven.';
+  $('lead').textContent = 'A schildert einen Fall, B und C denken laut weiter, und A hört nur zu. Kompakt dauert das rund '
+    + Math.round(totalSecs/60) + ' Minuten, in der Langform bestimmt ihr die Zeiten selbst.';
   PHASES.forEach(function(p,i){
     var li=document.createElement('li');
     li.innerHTML='<span class="n">'+pad(i+1)+'</span><span class="nm"></span><span class="tm"></span>';
@@ -236,6 +273,10 @@
   /* ===== Timer ===== */
   var idx=-1, total=0, remaining=0, running=false, endAt=0, tick=null, alerted=false;
   var wakeLock=null, audioCtx=null;
+  var mode='short', inSetup=false, openMode=false, elapsed=0;
+  var longSecs=[600,300,900,300];            // Vorschläge für die Langform (Sekunden)
+  var longOpen=[false,false,false,false];    // true = offener Timer (zählt hoch, ohne Limit)
+  var PRESETS=[5,10,15,20];
 
   function beep(){
     try{
@@ -260,7 +301,43 @@
     if(document.visibilityState==='visible' && idx>=0 && idx<PHASES.length) lock();
   });
 
+  function renderSetup(){
+    var open=longOpen[idx], secs=longSecs[idx];
+    $('clock').textContent = open ? '∞' : fmt(secs);
+    $('status').textContent = 'Zeit wählen';
+    document.body.classList.remove('over');
+    $('meter').style.transform = 'scaleX(1)';
+    $('btnMinus').disabled = open || secs<=60;
+    $('btnPlusMin').disabled = open || secs>=7200;
+    var chips=$('chips').children;
+    for(var k=0;k<PRESETS.length;k++) chips[k].classList.toggle('on', !open && secs===PRESETS[k]*60);
+    chips[PRESETS.length].classList.toggle('on', open);
+  }
+  PRESETS.forEach(function(m){
+    var b=document.createElement('button'); b.type='button'; b.className='chip'; b.textContent=m+' Min.';
+    b.addEventListener('click',function(){ longOpen[idx]=false; longSecs[idx]=m*60; renderSetup(); });
+    $('chips').appendChild(b);
+  });
+  (function(){
+    var b=document.createElement('button'); b.type='button'; b.className='chip'; b.textContent='Offen';
+    b.addEventListener('click',function(){ longOpen[idx]=!longOpen[idx]; renderSetup(); });
+    $('chips').appendChild(b);
+  })();
+  function adjust(d){
+    if(!inSetup || longOpen[idx]) return;
+    longSecs[idx]=Math.max(60,Math.min(7200,longSecs[idx]+d*60)); renderSetup();
+  }
+
   function render(){
+    if(inSetup){ renderSetup(); return; }
+    if(openMode){
+      $('clock').textContent = fmt(Math.floor(elapsed/1000));
+      $('status').textContent = 'offen · ' + (running ? 'läuft' : 'pausiert');
+      document.body.classList.remove('over');
+      $('meter').style.transform = 'scaleX(1)';
+      $('btnToggle').textContent = running ? 'Pause' : 'Weiter';
+      return;
+    }
     var over = remaining<=0;
     var sec = over ? Math.floor(-remaining/1000) : Math.ceil(remaining/1000);
     $('clock').textContent = (over?'+':'') + fmt(sec);
@@ -271,20 +348,23 @@
     $('btnToggle').textContent = running ? 'Pause' : 'Weiter';
   }
   function loop(){
+    if(openMode){ elapsed = Date.now()-endAt; render(); return; }
     remaining = endAt - Date.now();
     if(remaining<=0 && !alerted){ alerted=true; beep(); }
     render();
   }
   function startTimer(){
     if(running) return;
-    running=true; endAt=Date.now()+remaining;
+    running=true; endAt = openMode ? Date.now()-elapsed : Date.now()+remaining;
     clearInterval(tick); tick=setInterval(loop,200); render();
   }
   function stopTimer(){
     running=false; clearInterval(tick);
-    remaining=endAt-Date.now(); render();
+    if(openMode){ elapsed=Date.now()-endAt; } else { remaining=endAt-Date.now(); }
+    render();
   }
   function plus30(){
+    if(openMode || inSetup) return;
     if(remaining<=0){            // Zeit war schon um: frische 30 Sekunden
       remaining=30000; total=30000; alerted=false;
     } else {
@@ -297,6 +377,7 @@
   /* ===== Navigation ===== */
   function go(i){
     clearInterval(tick); running=false; alerted=false;
+    openMode=false; inSetup=false; elapsed=0;
     document.body.classList.remove('over');
     idx=i;
     if(i<0){ theme(HOME); show('start'); unlock(); return; }
@@ -315,7 +396,24 @@
       dots[k].classList.toggle('cur',k===i);
     }
     $('btnNext').innerHTML = (i===PHASES.length-1) ? 'Abschliessen&nbsp;→' : 'Weiter&nbsp;→';
-    total=remaining=p.secs*1000;
+    $('ctrl').classList.remove('single'); $('btnPlus').hidden=false;
+    if(mode==='long'){
+      inSetup=true;
+      $('setup').hidden=true; $('setup').hidden=false; $('ctrl').hidden=true;
+      renderSetup();
+    } else {
+      $('setup').hidden=true; $('ctrl').hidden=false;
+      total=remaining=p.secs*1000;
+      render(); startTimer();
+    }
+  }
+  function startSelected(){
+    if(!inSetup) return;
+    inSetup=false; alerted=false;
+    $('setup').hidden=true; $('ctrl').hidden=false;
+    openMode=longOpen[idx];
+    $('btnPlus').hidden=openMode; $('ctrl').classList.toggle('single',openMode);
+    if(openMode){ elapsed=0; } else { total=remaining=longSecs[idx]*1000; }
     render(); startTimer();
   }
   function next(){ if(idx<PHASES.length) go(idx+1); }
@@ -328,7 +426,11 @@
       fn(); e.currentTarget.blur();
     });
   }
-  bind('btnStart',function(){ go(0); });
+  bind('btnShort',function(){ mode='short'; go(0); });
+  bind('btnLong',function(){ mode='long'; go(0); });
+  bind('btnGo',startSelected);
+  bind('btnMinus',function(){ adjust(-1); });
+  bind('btnPlusMin',function(){ adjust(1); });
   bind('btnNext',next);
   bind('btnBack',prev);
   bind('btnToggle',function(){ running ? stopTimer() : startTimer(); });
@@ -339,7 +441,13 @@
   document.addEventListener('keydown',function(e){
     if(e.ctrlKey||e.metaKey||e.altKey) return;
     var k=e.key, inPhase = idx>=0 && idx<PHASES.length;
-    if(k==='ArrowRight'||k==='PageDown'||k==='Enter'){
+    if(inSetup && (k==='Enter'||k===' ')){
+      e.preventDefault(); startSelected();
+    } else if(inSetup && (k==='+'||k==='=')){
+      adjust(1);
+    } else if(inSetup && (k==='-'||k==='_')){
+      adjust(-1);
+    } else if(k==='ArrowRight'||k==='PageDown'||k==='Enter'){
       e.preventDefault(); if(document.activeElement) document.activeElement.blur(); if(idx<PHASES.length) next();
     } else if(k==='ArrowLeft'||k==='PageUp'||k==='Backspace'){
       e.preventDefault(); prev();
