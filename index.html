@@ -86,7 +86,7 @@
   .top{display:flex;align-items:center;gap:1.6vw;padding-right:4.4rem;font-weight:800;text-transform:uppercase;letter-spacing:.14em;font-size:clamp(.8rem,1.55vw,2.2rem)}
   .top .num{border:.14em solid var(--fg);border-radius:.4em;padding:.15em .55em;letter-spacing:.06em;transition:border-color .55s ease}
   .top .count{margin-left:auto;opacity:.65;letter-spacing:.08em;white-space:nowrap}
-  .stage{flex:1;display:flex;flex-direction:column;justify-content:center;gap:2.2vh;min-height:0}
+  .stage{flex:1 0 auto;display:flex;flex-direction:column;justify-content:center;gap:2.2vh}
   .who{
     font-weight:800;line-height:1.08;letter-spacing:-.012em;text-wrap:balance;
     font-size:clamp(1.9rem,6vw,7rem);max-width:88vw;
@@ -149,6 +149,30 @@
   @media (max-width:700px){
     .title{font-size:min(10.5vw,12vh)}
     .lead{max-width:88vw}
+  }
+  /* Notebook, Desktop und Beamer (breit und flach): Elemente kleiner, Bedienung kompakter.
+     Das Handy-Layout bleibt davon unberührt. */
+  @media (min-width:900px) and (min-aspect-ratio:5/4){
+    .screen{padding-left:6vw;padding-right:6vw}
+    .btn{font-size:clamp(.9rem,1.2vw,1.4rem);padding:.75em 1.3em}
+    #phase{gap:1.6vh}
+    .who{font-size:clamp(2rem,min(4.6vw,9vh),5rem)}
+    .who::before{margin-bottom:1.2vh;height:max(.8vh,6px)}
+    .desc{font-size:clamp(1.05rem,min(1.9vw,3.4vh),2rem)}
+    .clock{font-size:min(14vw,24vh)}
+    .ctrl,.nav,.setup{max-width:52rem;width:100%}
+    .setup{display:grid;grid-template-columns:1fr 1fr 1.5fr;gap:12px}
+    .setup .chips{grid-column:1 / -1}
+    .setup .step{display:contents}
+    .chip{font-size:clamp(.8rem,1vw,1.2rem)}
+    .mode{max-width:22rem}
+    #start{gap:1.6vh}
+    .start-main{gap:1.6vh}
+    .title{font-size:min(5.6vw,11.5vh)}
+    .lead{font-size:clamp(1.05rem,min(1.7vw,3.2vh),2.1rem);max-width:60rem}
+    .ov{max-width:34rem}
+    .ov li{padding:.4em 0;font-size:clamp(.95rem,min(1.3vw,2.6vh),1.5rem)}
+    .dots{justify-content:flex-start;padding-left:.3em}
   }
   @media (prefers-reduced-motion:reduce){
     .who.in,.desc.in,body.over .clock{animation:none}
@@ -399,7 +423,7 @@
     $('ctrl').classList.remove('single'); $('btnPlus').hidden=false;
     if(mode==='long'){
       inSetup=true;
-      $('setup').hidden=true; $('setup').hidden=false; $('ctrl').hidden=true;
+      $('setup').hidden=false; $('ctrl').hidden=true;
       renderSetup();
     } else {
       $('setup').hidden=true; $('ctrl').hidden=false;
